@@ -74,6 +74,52 @@ pip3 install -e .[recommended]
 ```
 
 
+# Expert Agent API
+The RL based agent is also served over HTTP by a FastAPI application ([app/main.py](app/main.py)), which exposes a single endpoint returning a recommendation for a given grid event.
+
+### Configure the token
+The endpoint is protected by a bearer token read from the `API_TOKEN` environment variable. Copy the template and set your own value:
+```bash
+cp .env.example .env
+```
+> [!IMPORTANT]
+> `.env` is git-ignored and must never be committed. Requests without a matching token are rejected with `401`, and the server answers `500` if `API_TOKEN` is left unset.
+
+### Run with Docker Compose
+Two configurations are provided, both building the image from the `Dockerfile` and reading the token from `.env`.
+
+**Server deployment** — published on port `5000`, restarts automatically:
+```bash
+docker compose up -d --build
+```
+
+**Local deployment** — published on port `5123`, can be installed alongside InteractiveAI:
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+Follow the logs (incoming payloads are logged to stdout) and stop the service with:
+```bash
+docker compose logs -f
+docker compose down
+```
+Add `-f docker-compose.local.yml` to both commands to target the local deployment.
+
+### Run without Docker
+```bash
+API_TOKEN=<your_token> uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Request a recommendation
+```bash
+curl -X POST http://localhost:5000/api/v1/recommendation \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $API_TOKEN" \
+    --data @rte_recommendation.json
+```
+The request body carries an `event` object, a `context` object and an optional `cognitive_snapshot` object. Use port `5123` instead of `5000` for the local deployment, or `8000` when running `uvicorn` directly.
+
+
 ## Overview of code structure
 :open_file_folder: **ExpertAgent**
 

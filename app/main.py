@@ -1,16 +1,47 @@
 # command to execute the API
-# uvicorn main:app --host 0.0.0.0 --port 8000
+# API_TOKEN=mysecrettoken uvicorn main:app --host 0.0.0.0 --port 8000
 # Command to request a recommendation from server
-# curl -X POST http://localhost:8000/api/v1/recommendation -H "Content-Type: application/json" --data @rte_recommendation.json
+# curl -X POST http://192.168.208.61:5000/api/v1/recommendation \
+# -H "Content-Type: application/json" \
+# -H "Authorization: Bearer $API_TOKEN" \ 
+# --data @rte_recommendation.json
 # docker build -t expert-agent-api .
-# docker run -p 8000:8000 expert-agent-api
+# docker run -p 8000:8000 -e API_TOKEN=mysecrettoken expert-agent-api
 # docker run --rm -it --entrypoint bash expert-agent-api
 import os
+import json
+import logging
 from typing import Optional, List
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, Security, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Any
+import secrets
 import numpy as np
+
+# --- Logging (goes to stdout -> visible via `docker logs`) ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("expert-agent-api")
+
+# --- Authentication ---
+_security = HTTPBearer()
+_API_TOKEN = os.environ.get("API_TOKEN", "")
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(_security)):
+    if not _API_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API_TOKEN environment variable is not set"
+        )
+    if not secrets.compare_digest(credentials.credentials, _API_TOKEN):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 from LJNAgent.modules.rewards import PPO_Reward
 from LJNAgent.modules.rewards import MaxRhoReward
@@ -70,6 +101,7 @@ agent.load(load_path)
 class RecommendationRequest(BaseModel):
     event: dict
     context: dict
+    cognitive_snapshot: Optional[dict] = None
     # observation: Optional[Any] = None
     # observation: List[float] = None
 
@@ -78,8 +110,11 @@ class RecommendationRequest(BaseModel):
 
 app = FastAPI()
 
-@app.post("/api/v1/recommendation")#, response_model=RecommendationResponse)
+@app.post("/api/v1/recommendation", dependencies=[Depends(verify_token)])#, response_model=RecommendationResponse)
 def get_recommendation(request: RecommendationRequest):
+    # Log the incoming payload so it is visible in `docker logs`
+    logger.info("Received recommendation request: %s", json.dumps(request.dict()))
+
     # Convert incoming data to the observation format your agent expects
     observation = {
         "event": request.event,
@@ -263,7 +298,7 @@ def get_parade_info(act, obs):
         kpis["type_of_the_reco"] = (
             "Do nothing"  # pour renvoyer le kpi type_of_the_reco
         )
-        title.append("Poursuivre")
+        title.append("Continue")
         description.append(
             "Continuation of the scenario without operator action"
         )

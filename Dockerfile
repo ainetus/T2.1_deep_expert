@@ -48,5 +48,6 @@ RUN pip install .
 # Expose port
 EXPOSE 8000
 
+# Pass API_TOKEN at runtime: docker run -e API_TOKEN=<your_token> ...
 # Run server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
